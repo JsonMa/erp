@@ -1,0 +1,94 @@
+stages:
+  - lint
+  - build
+  - test
+  - deploy
+
+variables:
+  EGG_SERVER_ENV: ci 
+  Host: localhost
+  POSTGRES_DB: shubang
+  POSTGRES_USER: postgres 
+  POSTGRES_PASSWORD: root 
+
+build:
+  stage: build
+  tags:
+    - shell
+  when: manual
+  script: 
+      - docker build -t harbor.ioteams.com/saas/shubangv2-base . 
+      - docker push harbor.ioteams.com/saas/shubangv2-base
+
+eslint:
+  stage: lint 
+  tags:
+    - shell
+  script:
+    - npm run lint
+  only:
+    - branches
+  except:
+    - develop
+    - master
+
+branch_name:
+  stage: lint
+  tags:
+    - shell
+  only:
+    - branches
+  except:
+    - master
+    - develop
+  script:
+    - node -e "assert(process.env.CI_BUILD_REF_NAME.match('(feature|bug|hotfix|dev)[a-zA-Z_]+'))"
+
+test: 
+  image: harbor.ioteams.com/saas/shubangv2-base
+  stage: test
+  only:
+    - branches
+  except:
+    - develop
+    - master 
+  tags:
+    - docker registry
+  before_script:
+    - mkdir -p files
+    - ln -s /app/node_modules node_modules
+  script: 
+    - npm test
+  services: 
+    - redis:3.2
+    - postgres:9.6.5
+
+coverage: 
+  image: harbor.ioteams.com/saas/shubangv2-base
+  stage: test
+  only:
+    - branches
+  except:
+    - develop
+    - master 
+  tags:
+    - docker registry
+  before_script:
+    - mkdir -p files
+    - mkdir .nyc_output
+    - ln -s /app/node_modules node_modules
+  script: 
+    - npm run cov
+  services: 
+    - redis:3.2
+    - postgres:9.6.5
+
+release:
+  stage: deploy
+  tags: 
+    - shell
+  script: 
+      - docker build -t harbor.ioteams.com/saas/shubangv2:$CI_BUILD_REF_NAME -f Dockerfile.server . 
+      - docker push harbor.ioteams.com/saas/shubangv2:$CI_BUILD_REF_NAME
+  only:
+    - tags
